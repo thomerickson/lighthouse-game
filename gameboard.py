@@ -27,7 +27,7 @@ def scr_ratio(a, axis):
 
 Window.borderless = False
 Window.resizable = False
-Window.size = (int(scr_ratio(700, 'y')), 700)
+Window.size = (int(scr_ratio(725, 'y')), 725)
 Window.bottom = 0
 
 WINDOW_WIDTH = dp(Window.size[0])
@@ -98,7 +98,7 @@ class Field(Sprite):
         return reqs_total == 0
 
 class Card(Scatter):
-    def __init__(self, name, cardtype, cost, reqs, location, **kwargs):
+    def __init__(self, name, img_src, cardtype, cost, reqs, location, **kwargs):
         super(Card, self).__init__()
         self.do_scale = False
         self.do_rotation = False
@@ -106,9 +106,10 @@ class Card(Scatter):
         self.location = location
         self.name = name
         self.cardtype = cardtype
-        self.img = Sprite(size=(CARD_WIDTH, CARD_HEIGHT), **kwargs)
-        self.add_widget(self.img)
-        self.size = self.img.size
+        self.img_src = img_src
+        self.img_sprite = Sprite(size=(CARD_WIDTH, CARD_HEIGHT), source=self.img_src)
+        self.add_widget(self.img_sprite)
+        self.size = self.img_sprite.size
         self.size_hint = (None, None)
         self.cost = cost
         self.reqs = reqs
@@ -149,6 +150,7 @@ class Card(Scatter):
 
         if self.collide_point(*touch.pos) and self.do_translation == (False, False):
             print('tapped locked card: {}'.format(self.name))
+            self.show_info()
             return True
         else:
             return super(Card, self).on_touch_down(touch)
@@ -162,14 +164,14 @@ class Card(Scatter):
         if not touch.grab_current == self:
             # ignore if current card not the target
             return False
-        if self.collide_point(*touch.pos):
+        if self.collide_point(*touch.pos) and self.do_translation != (False, False):
             # first check to see if displaying info and dismiss
 
             # then check to see if tapped or dragged:
             if (abs(CARD_LOCS[self.location][0] - self.pos[0]) < dp(5)) and (abs(CARD_LOCS[self.location][1] - self.pos[1]) < dp(5)):
                 self.pos = CARD_LOCS[self.location]
                 print('CARD TAPPED AT LOC: ' + str(self.location))
-                # self.show_info()
+                self.show_info()
             else:
                 collide = []
                 for field in self.parent.fields:
@@ -177,21 +179,42 @@ class Card(Scatter):
                         collide.append(field.location)
 
                 if len(collide) == 0 or len(collide) > 1:
-                    # either collided with nothing, or more than one widget
+                    # either collided with nothing or more than one, so animate back to 
                     self.change_loc(self.location, animate=True)
                 else:
+                    # check to see if current card meets requirements in the field,
+                    # and add card to stack and lock, or animate back to place
                     if self.parent.fields[collide[0]].check_requirements(self.reqs):
-                        print('collide worked')
                         self.parent.fields[collide[0]].add_card(self)
                         self.lock()
                     self.change_loc(self.location, animate=True)
         return super(Card, self).on_touch_up(touch)
 
     def show_info(self):
-        pass
+        self.popup = Info_card(self)
+        self.parent.add_widget(self.popup)
+        for child in self.parent.children:
+            child.disabled = True
 
     def hide_info(self):
-        pass
+        self.parent.remove_widget(self.popup)
+        for child in self.parent.children:
+            child.disabled = False
+
+class Info_card(FloatLayout):
+    def __init__(self, card, **kwargs):
+        super(Info_card, self).__init__(**kwargs)
+        self.card = card
+        self.img = Sprite((CARD_WIDTH*3.5,CARD_HEIGHT*3.5), pos_hint={'center_x': .5, 'center_y':.5}, source=self.card.img_src)
+        self.flavor = Label(text='This is some flavor text', width=CARD_WIDTH*3.5, pos_hint={'center_x': .5, 'center_y':.35})
+        self.add_widget(self.img)
+        self.add_widget(self.flavor)
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            self.card.hide_info()
+        return False
+
 
 # GAME LOGIC
 ###############################################
@@ -204,6 +227,9 @@ class Game(FloatLayout):
         self.hand = [None, None, None]
         self.fields = [None, None, None, None]
         self.deck = []
+
+        img = Sprite(size=(Window.width, Window.height), source='images/Galaxy-bg.png', pos=(0,0))
+        self.add_widget(img)
 
         self.build_board()
         self.build_deck(card_db.cards)
@@ -229,11 +255,12 @@ class Game(FloatLayout):
         ''' Build the deck using a shuffled database of cards, db '''
         
         for card in db:
-            card_object = Card(card['name'], card['cardtype'], card['cost'], card['reqs'], 'deck', source=card['img'])
+            card_object = Card(card['name'], card['img'], card['cardtype'], card['cost'], card['reqs'], 'deck')
             self.deck.append(card_object)
             card_object.update()
         for card in self.deck:
             self.add_widget(card)
+
 
     def add_hand(self, card):
         ''' Add selected card (card) to the hand pile, which automatically
@@ -250,6 +277,7 @@ class Game(FloatLayout):
                 card.change_loc('hand' + str(i), animate=True)
                 print('ADDED CARD {} TO {}'.format(card.name, card.location))
                 return True
+
 
     def rem_hand(self, card):
         ''' remove card from hand pile, returns False if card doesn't exist '''
